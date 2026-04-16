@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import api from "../services/api";
 import Loader from "../components/Loader";
 import {
   ResponsiveContainer,
@@ -12,6 +11,14 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import {
+  getAreaLiveData,
+  getPoleHistory,
+  getSimulationStatus,
+  changeScenario,
+  uploadLogFile,
+} from "../services/api";
+import { connectIoT, subscribeToTopic, buildAreaTopics } from "../services/iot";
 
 function LiveDataPage() {
   const { selectedArea } = useOutletContext();
@@ -32,12 +39,18 @@ function LiveDataPage() {
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
 
+  const [iotStatus, setIotStatus] = useState("Disconnected");
+  const [lastLiveMessage, setLastLiveMessage] = useState(null);
+
   const availablePoles = useMemo(() => {
     if (!areaLive) return [];
     if (Array.isArray(areaLive.poles)) return areaLive.poles;
     if (Array.isArray(areaLive.pole_ids)) return areaLive.pole_ids;
     if (Array.isArray(areaLive.available_poles)) return areaLive.available_poles;
-    if (areaLive.latest_pole_events && typeof areaLive.latest_pole_events === "object") {
+    if (
+      areaLive.latest_pole_events &&
+      typeof areaLive.latest_pole_events === "object"
+    ) {
       return Object.keys(areaLive.latest_pole_events);
     }
     return [];
@@ -46,21 +59,28 @@ function LiveDataPage() {
   useEffect(() => {
     if (!selectedArea) return;
 
+    let mounted = true;
     let cancelled = false;
 
     const fetchAreaLive = async () => {
       try {
-        const res = await api.get(`/live/areas/${selectedArea}`);
+        const res = await getAreaLiveData(selectedArea);
         if (cancelled) return;
 
-        setAreaLive(res.data);
+        if (mounted) {
+          setAreaLive(res.data);
+        }
+        
 
-        const poles =
-          Array.isArray(res.data?.poles) ? res.data.poles :
-          Array.isArray(res.data?.pole_ids) ? res.data.pole_ids :
-          Array.isArray(res.data?.available_poles) ? res.data.available_poles :
-          res.data?.latest_pole_events ? Object.keys(res.data.latest_pole_events) :
-          [];
+        const poles = Array.isArray(res.data?.poles)
+          ? res.data.poles
+          : Array.isArray(res.data?.pole_ids)
+          ? res.data.pole_ids
+          : Array.isArray(res.data?.available_poles)
+          ? res.data.available_poles
+          : res.data?.latest_pole_events
+          ? Object.keys(res.data.latest_pole_events)
+          : [];
 
         if (poles.length > 0) {
           setPoleId((prev) => (prev && poles.includes(prev) ? prev : poles[0]));
@@ -81,13 +101,16 @@ function LiveDataPage() {
     };
 
     fetchAreaLive();
-    const interval = setInterval(fetchAreaLive, 2000);
+    const interval = setInterval(fetchAreaLive, 5000);
 
     return () => {
       cancelled = true;
+      mounted = false;
       clearInterval(interval);
     };
   }, [selectedArea]);
+
+
 
   useEffect(() => {
     if (!poleId) {
@@ -97,9 +120,9 @@ function LiveDataPage() {
 
     let cancelled = false;
 
-    const fetchPoleHistory = async () => {
+    const fetchPoleHistoryData = async () => {
       try {
-        const res = await api.get(`/live/poles/${poleId}/history`);
+        const res = await getPoleHistory(poleId);
         if (cancelled) return;
 
         const history = Array.isArray(res.data)
@@ -118,21 +141,19 @@ function LiveDataPage() {
       }
     };
 
-    fetchPoleHistory();
-    const interval = setInterval(fetchPoleHistory, 2000);
+    fetchPoleHistoryData();
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
     };
   }, [poleId]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const fetchScenarioStatus = async () => {
+    const fetchScenarioStatusData = async () => {
       try {
-        const res = await api.get("/simulation/status");
+        const res = await getSimulationStatus();
         if (!cancelled) {
           setCurrentScenario(res.data.current_scenario || "normal");
         }
@@ -143,8 +164,8 @@ function LiveDataPage() {
       }
     };
 
-    fetchScenarioStatus();
-    const interval = setInterval(fetchScenarioStatus, 3000);
+    fetchScenarioStatusData();
+    const interval = setInterval(fetchScenarioStatusData, 3000);
 
     return () => {
       cancelled = true;
@@ -152,12 +173,51 @@ function LiveDataPage() {
     };
   }, []);
 
+useEffect(() => {
+  if (!selectedArea) return;
+
+  let unsubscribers = [];
+  let cancelled = false;
+
+  const setupSubscriptions = async () => {
+    try {
+      setIotStatus("Connecting...");
+
+      const topics = buildAreaTopics(selectedArea, poleId);
+
+      for (const topic of topics) {
+        const unsubscribe = await subscribeToTopic(topic, (message) => {
+          if (cancelled) return;
+          console.log("MQTT message", topic, message);
+        });
+        unsubscribers.push(unsubscribe);
+      }
+
+      if (!cancelled) {
+        setIotStatus("Connected");
+      }
+    } catch (err) {
+      console.error("IoT subscription setup failed", err);
+      if (!cancelled) {
+        setIotStatus("Error");
+      }
+    }
+  };
+
+  setupSubscriptions();
+
+  return () => {
+    cancelled = true;
+    unsubscribers.forEach((fn) => fn?.());
+  };
+}, [selectedArea, poleId]);
+
   const handleScenarioChange = async () => {
     setScenarioLoading(true);
     setScenarioMessage("");
 
     try {
-      const res = await api.post(`/simulation/scenario/${selectedScenario}`);
+      const res = await changeScenario(selectedScenario);
       setScenarioMessage(res.data?.message || `Scenario changed to ${selectedScenario}`);
       setCurrentScenario(selectedScenario);
     } catch (err) {
@@ -188,12 +248,7 @@ function LiveDataPage() {
     setUploadError("");
 
     try {
-      const res = await api.post("/upload-log", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
+      const res = await uploadLogFile(formData);
       setUploadMessage(`Uploaded successfully: ${res.data.key}`);
       setSelectedFile(null);
     } catch (err) {
@@ -209,8 +264,8 @@ function LiveDataPage() {
     return (poleHistory || []).map((item, index) => ({
       index: index + 1,
       time: formatTime(item.timestamp),
-      voltage_v: numberOrNull(item.voltage_v),
-      current_a: numberOrNull(item.current_a),
+      voltage_v: numberOrNull(item.voltage_v ?? item.voltage),
+      current_a: numberOrNull(item.current_a ?? item.current),
       tilt_deg: numberOrNull(item.tilt_deg),
       temperature_c: numberOrNull(item.temperature_c),
       smart_meter_kw: numberOrNull(item.smart_meter_kw),
@@ -237,6 +292,11 @@ function LiveDataPage() {
         <div className="card">
           <h3>Current Scenario</h3>
           <p className="stat-value">{currentScenario || "-"}</p>
+        </div>
+
+        <div className="card">
+          <h3>AWS IoT Status</h3>
+          <p className="stat-value">{iotStatus}</p>
         </div>
       </div>
 
@@ -308,6 +368,12 @@ function LiveDataPage() {
             )}
           </select>
         </div>
+
+        {lastLiveMessage && (
+          <p className="file-info">
+            Live topic: <strong>{lastLiveMessage.topic}</strong>
+          </p>
+        )}
       </div>
 
       <MetricChart
@@ -378,6 +444,44 @@ function MetricChart({ title, data, dataKey, color }) {
       )}
     </div>
   );
+}
+
+function mergeAreaSummary(prev, incoming) {
+  if (!prev) return incoming;
+  return {
+    ...prev,
+    ...incoming,
+  };
+}
+
+function mergePoleAggregate(prev, poleId, incoming) {
+  if (!prev) return prev;
+
+  const updated = { ...prev };
+
+  if (updated.latest_pole_events && typeof updated.latest_pole_events === "object") {
+    updated.latest_pole_events = {
+      ...updated.latest_pole_events,
+      [poleId]: {
+        ...(updated.latest_pole_events[poleId] || {}),
+        ...incoming,
+      },
+    };
+  }
+
+  return updated;
+}
+
+function prependLiveHistory(prev, incoming) {
+  const next = [
+    {
+      ...incoming,
+      timestamp: incoming.timestamp || new Date().toISOString(),
+    },
+    ...(prev || []),
+  ];
+
+  return next.slice(0, 100);
 }
 
 function formatTime(timestamp) {
