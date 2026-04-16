@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import api from "../services/api";
 import Loader from "../components/Loader";
 import {
   ResponsiveContainer,
@@ -11,14 +12,6 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import {
-  getAreaLiveData,
-  getPoleHistory,
-  getSimulationStatus,
-  changeScenario,
-  uploadLogFile,
-} from "../services/api";
-import { connectIoT, subscribeToTopic, buildAreaTopics } from "../services/iot";
 
 function LiveDataPage() {
   const { selectedArea } = useOutletContext();
@@ -29,57 +22,65 @@ function LiveDataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [selectedScenario, setSelectedScenario] = useState("normal");
-  const [currentScenario, setCurrentScenario] = useState("normal");
-  const [scenarioMessage, setScenarioMessage] = useState("");
-  const [scenarioLoading, setScenarioLoading] = useState(false);
-
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
 
-  const [iotStatus, setIotStatus] = useState("Disconnected");
-  const [lastLiveMessage, setLastLiveMessage] = useState(null);
-
   const availablePoles = useMemo(() => {
     if (!areaLive) return [];
+
     if (Array.isArray(areaLive.poles)) return areaLive.poles;
     if (Array.isArray(areaLive.pole_ids)) return areaLive.pole_ids;
     if (Array.isArray(areaLive.available_poles)) return areaLive.available_poles;
+
     if (
       areaLive.latest_pole_events &&
       typeof areaLive.latest_pole_events === "object"
     ) {
       return Object.keys(areaLive.latest_pole_events);
     }
+
+    if (Array.isArray(areaLive.data)) {
+      return areaLive.data
+        .map((item) => item?.pole_id || item?.pole || item?.id)
+        .filter(Boolean);
+    }
+
     return [];
   }, [areaLive]);
 
   useEffect(() => {
-    if (!selectedArea) return;
+    if (!selectedArea) {
+      setAreaLive(null);
+      setPoleId("");
+      setPoleHistory([]);
+      setLoading(false);
+      return;
+    }
 
-    let mounted = true;
     let cancelled = false;
 
     const fetchAreaLive = async () => {
       try {
-        const res = await getAreaLiveData(selectedArea);
+        const res = await api.get(`/live/areas/${selectedArea}`);
         if (cancelled) return;
 
-        if (mounted) {
-          setAreaLive(res.data);
-        }
-        
+        const data = res.data;
+        setAreaLive(data);
 
-        const poles = Array.isArray(res.data?.poles)
-          ? res.data.poles
-          : Array.isArray(res.data?.pole_ids)
-          ? res.data.pole_ids
-          : Array.isArray(res.data?.available_poles)
-          ? res.data.available_poles
-          : res.data?.latest_pole_events
-          ? Object.keys(res.data.latest_pole_events)
+        const poles = Array.isArray(data?.poles)
+          ? data.poles
+          : Array.isArray(data?.pole_ids)
+          ? data.pole_ids
+          : Array.isArray(data?.available_poles)
+          ? data.available_poles
+          : data?.latest_pole_events && typeof data.latest_pole_events === "object"
+          ? Object.keys(data.latest_pole_events)
+          : Array.isArray(data?.data)
+          ? data.data
+              .map((item) => item?.pole_id || item?.pole || item?.id)
+              .filter(Boolean)
           : [];
 
         if (poles.length > 0) {
@@ -100,17 +101,15 @@ function LiveDataPage() {
       }
     };
 
+    setLoading(true);
     fetchAreaLive();
     const interval = setInterval(fetchAreaLive, 5000);
 
     return () => {
       cancelled = true;
-      mounted = false;
       clearInterval(interval);
     };
   }, [selectedArea]);
-
-
 
   useEffect(() => {
     if (!poleId) {
@@ -122,7 +121,7 @@ function LiveDataPage() {
 
     const fetchPoleHistoryData = async () => {
       try {
-        const res = await getPoleHistory(poleId);
+        const res = await api.get(`/live/poles/${poleId}/history`);
         if (cancelled) return;
 
         const history = Array.isArray(res.data)
@@ -142,90 +141,13 @@ function LiveDataPage() {
     };
 
     fetchPoleHistoryData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [poleId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchScenarioStatusData = async () => {
-      try {
-        const res = await getSimulationStatus();
-        if (!cancelled) {
-          setCurrentScenario(res.data.current_scenario || "normal");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setCurrentScenario("unknown");
-        }
-      }
-    };
-
-    fetchScenarioStatusData();
-    const interval = setInterval(fetchScenarioStatusData, 3000);
+    const interval = setInterval(fetchPoleHistoryData, 5000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
-
-useEffect(() => {
-  if (!selectedArea) return;
-
-  let unsubscribers = [];
-  let cancelled = false;
-
-  const setupSubscriptions = async () => {
-    try {
-      setIotStatus("Connecting...");
-
-      const topics = buildAreaTopics(selectedArea, poleId);
-
-      for (const topic of topics) {
-        const unsubscribe = await subscribeToTopic(topic, (message) => {
-          if (cancelled) return;
-          console.log("MQTT message", topic, message);
-        });
-        unsubscribers.push(unsubscribe);
-      }
-
-      if (!cancelled) {
-        setIotStatus("Connected");
-      }
-    } catch (err) {
-      console.error("IoT subscription setup failed", err);
-      if (!cancelled) {
-        setIotStatus("Error");
-      }
-    }
-  };
-
-  setupSubscriptions();
-
-  return () => {
-    cancelled = true;
-    unsubscribers.forEach((fn) => fn?.());
-  };
-}, [selectedArea, poleId]);
-
-  const handleScenarioChange = async () => {
-    setScenarioLoading(true);
-    setScenarioMessage("");
-
-    try {
-      const res = await changeScenario(selectedScenario);
-      setScenarioMessage(res.data?.message || `Scenario changed to ${selectedScenario}`);
-      setCurrentScenario(selectedScenario);
-    } catch (err) {
-      setScenarioMessage("Failed to change scenario");
-    } finally {
-      setScenarioLoading(false);
-    }
-  };
+  }, [poleId]);
 
   const handleFileSelection = (event) => {
     const file = event.target.files?.[0] || null;
@@ -248,7 +170,11 @@ useEffect(() => {
     setUploadError("");
 
     try {
-      const res = await uploadLogFile(formData);
+      const res = await api.post("/upload-log", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
       setUploadMessage(`Uploaded successfully: ${res.data.key}`);
       setSelectedFile(null);
     } catch (err) {
@@ -288,37 +214,6 @@ useEffect(() => {
           <h3>Selected Pole</h3>
           <p className="stat-value">{poleId || "-"}</p>
         </div>
-
-        <div className="card">
-          <h3>Current Scenario</h3>
-          <p className="stat-value">{currentScenario || "-"}</p>
-        </div>
-
-        <div className="card">
-          <h3>AWS IoT Status</h3>
-          <p className="stat-value">{iotStatus}</p>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Scenario Control</h3>
-        <div className="search-form">
-          <select
-            className="area-select"
-            value={selectedScenario}
-            onChange={(e) => setSelectedScenario(e.target.value)}
-          >
-            <option value="normal">normal</option>
-            <option value="load_shedding">load_shedding</option>
-            <option value="double_pole_failure">double_pole_failure</option>
-          </select>
-
-          <button onClick={handleScenarioChange} disabled={scenarioLoading}>
-            {scenarioLoading ? "Updating..." : "Change Scenario"}
-          </button>
-        </div>
-
-        {scenarioMessage && <p className="success-text">{scenarioMessage}</p>}
       </div>
 
       <div className="card">
@@ -368,12 +263,6 @@ useEffect(() => {
             )}
           </select>
         </div>
-
-        {lastLiveMessage && (
-          <p className="file-info">
-            Live topic: <strong>{lastLiveMessage.topic}</strong>
-          </p>
-        )}
       </div>
 
       <MetricChart
@@ -444,44 +333,6 @@ function MetricChart({ title, data, dataKey, color }) {
       )}
     </div>
   );
-}
-
-function mergeAreaSummary(prev, incoming) {
-  if (!prev) return incoming;
-  return {
-    ...prev,
-    ...incoming,
-  };
-}
-
-function mergePoleAggregate(prev, poleId, incoming) {
-  if (!prev) return prev;
-
-  const updated = { ...prev };
-
-  if (updated.latest_pole_events && typeof updated.latest_pole_events === "object") {
-    updated.latest_pole_events = {
-      ...updated.latest_pole_events,
-      [poleId]: {
-        ...(updated.latest_pole_events[poleId] || {}),
-        ...incoming,
-      },
-    };
-  }
-
-  return updated;
-}
-
-function prependLiveHistory(prev, incoming) {
-  const next = [
-    {
-      ...incoming,
-      timestamp: incoming.timestamp || new Date().toISOString(),
-    },
-    ...(prev || []),
-  ];
-
-  return next.slice(0, 100);
 }
 
 function formatTime(timestamp) {
