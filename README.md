@@ -19,7 +19,7 @@ This is the frontend dashboard for a power fault detection and management system
 
 ## We will need below basic installations
 
-Before you get started, make sure you have these installed on your computer:
+Before we get started, make sure you have these installed on your computer:
 
 - **Node.js** (version 14 or higher)
 - **npm** (usually comes with Node.js)
@@ -29,7 +29,7 @@ Before you get started, make sure you have these installed on your computer:
 
 ### Step 1: Install Dependencies
 
-Open your terminal and navigate to this folder, then run:
+Open the terminal and navigate to this folder, then run:
 
 ```bash
 npm install
@@ -45,9 +45,9 @@ Run this command to start the dashboard:
 npm run dev
 ```
 
-Your browser should automatically open to `http://localhost:5173`. If not, just go there manually.
+Browser should automatically open to `http://localhost:5173`. If not, just go there manually.
 
-You should see the dashboard load with all the pages and real-time data streaming in!
+Should be able to see the dashboard load with all the pages and real-time data streaming in!
 
 ## Available Commands
 
@@ -57,7 +57,7 @@ Here are the main commands you'll use:
 # Start the development server
 npm run dev
 
-# Build for production
+# Build for deployment
 npm run build
 
 ```
@@ -90,11 +90,11 @@ src/
 
 ## How It Works
 
-1. **Frontend** loads in your browser
+1. **Frontend** loads in the browser
 2. **App connects** to the backend API and WebSocket server
 3. **Real-time updates** stream in through WebSocket
 4. **Dashboard displays** all the data in easy-to-read pages
-5. **You manage** alerts and monitor the system from the UI
+5. **manage** alerts and monitor the system from the UI
 
 ## Backend Connection
 
@@ -106,9 +106,7 @@ This dashboard expects a backend API running at a configured URL. Make sure:
 - Any required environment variables are set in `.env` (if your backend needs them)
 
 
-## Building for Production
-
-When you're ready to deploy:
+## Building for deployment
 
 ```bash
 npm run build
