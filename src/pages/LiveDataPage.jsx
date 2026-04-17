@@ -28,9 +28,8 @@ function LiveDataPage() {
 
   const [iotStatus, setIotStatus] = useState("Disconnected");
 
-  // -----------------------------
-  // Derived poles
-  // -----------------------------
+  // ===== Derived Poles & Filtering =====
+  // Extract available poles from area data structure
   const availablePoles = useMemo(() => {
     if (!areaLive) return [];
     if (Array.isArray(areaLive.poles)) return areaLive.poles;
@@ -40,9 +39,8 @@ function LiveDataPage() {
     return [];
   }, [areaLive]);
 
-  // -----------------------------
-  // INITIAL LOAD (REST API)
-  // -----------------------------
+  // ===== Initial Page Load =====
+  // Load area data from API when component mounts or area changes
   useEffect(() => {
     if (!selectedArea) return;
 
@@ -52,6 +50,7 @@ function LiveDataPage() {
       try {
         setLoading(true);
 
+        // Fetch live area data from REST API
         const res = await getAreaLiveData(selectedArea);
 
         if (cancelled) return;
@@ -82,21 +81,20 @@ function LiveDataPage() {
     };
   }, [selectedArea]);
 
-  // -----------------------------
-  // WEB SOCKET (REAL-TIME STREAM)
-  // -----------------------------
+  // ===== WebSocket Real-Time Updates =====
+  // Connect to WebSocket for streaming sensor and alert data
   useEffect(() => {
     if (!selectedArea) return;
 
     wsService.connect((msg) => {
       if (!msg?.type) return;
 
-      // ---------------- ALERT ----------------
+      // ===== ALERT MESSAGE =====
       if (msg.type === "ALERT") {
         console.log("🚨 ALERT:", msg.data);
       }
 
-      // ---------------- SENSOR ----------------
+      // ===== SENSOR READING =====
       if (msg.type === "SENSOR") {
         const event = msg.data;
 
@@ -113,7 +111,7 @@ function LiveDataPage() {
         }
       }
 
-      // ---------------- SUMMARY ----------------
+      // ===== AREA SUMMARY =====
       if (msg.type === "SUMMARY") {
         console.log("📊 SUMMARY:", msg.data);
       }
@@ -126,9 +124,8 @@ function LiveDataPage() {
     };
   }, [selectedArea, poleId]);
 
-  // -----------------------------
-  // POLE HISTORY (REST)
-  // -----------------------------
+  // ===== Load Pole History =====
+  // Fetch historical sensor readings when pole selection changes
   useEffect(() => {
     if (!poleId) {
       setPoleHistory([]);
@@ -159,9 +156,8 @@ function LiveDataPage() {
     };
   }, [poleId]);
 
-  // -----------------------------
-  // SCENARIO STATUS POLLING
-  // -----------------------------
+  // ===== Scenario Status Polling =====
+  // Poll backend periodically to check if simulation scenario has changed
   useEffect(() => {
     let cancelled = false;
 
@@ -185,9 +181,8 @@ function LiveDataPage() {
     };
   }, []);
 
-  // -----------------------------
-  // SCENARIO CHANGE
-  // -----------------------------
+  // ===== Handle Scenario Changes =====
+  // Send new scenario selection to backend and update UI
   const handleScenarioChange = async () => {
     try {
       await changeScenario(selectedScenario);
@@ -197,9 +192,8 @@ function LiveDataPage() {
     }
   };
 
-  // -----------------------------
-  // CHART DATA
-  // -----------------------------
+  // ===== Chart Data Transformation =====
+  // Prepare pole history data for chart visualization
   const chartData = useMemo(() => {
     return (poleHistory || []).map((item, index) => ({
       index: index + 1,
@@ -212,15 +206,13 @@ function LiveDataPage() {
     }));
   }, [poleHistory]);
 
-  // -----------------------------
-  // LOADING STATE
-  // -----------------------------
+  // Show loading state while fetching initial data
   if (loading) return <Loader text="Loading live sensor data..." />;
 
   return (
     <div className="live-page">
 
-      {/* STATS */}
+      {/* Display current area, pole, scenario, and IoT connection status */}
       <div className="stats-grid">
         <div className="card">
           <h3>Selected Area</h3>
@@ -243,7 +235,7 @@ function LiveDataPage() {
         </div>
       </div>
 
-      {/* POLE SELECT */}
+      {/* Pole selection dropdown */}
       <div className="card">
         <select
           value={poleId}
@@ -257,7 +249,7 @@ function LiveDataPage() {
         </select>
       </div>
 
-      {/* CHARTS */}
+      {/* Display real-time metric charts */}
       <MetricChart title="Voltage" data={chartData} dataKey="voltage_v" />
       <MetricChart title="Current" data={chartData} dataKey="current_a" />
       <MetricChart title="Temperature" data={chartData} dataKey="temperature_c" />
@@ -265,9 +257,8 @@ function LiveDataPage() {
   );
 }
 
-// -----------------------------
-// CHART COMPONENT
-// -----------------------------
+// ===== Chart Component for Metrics =====
+// Reusable line chart component for displaying sensor metrics over time
 function MetricChart({ title, data, dataKey }) {
   return (
     <div className="card">
@@ -285,9 +276,8 @@ function MetricChart({ title, data, dataKey }) {
   );
 }
 
-// -----------------------------
-// HELPERS
-// -----------------------------
+// ===== Utility Functions =====
+// Helper functions for data transformation and formatting
 function formatTime(ts) {
   return ts ? new Date(ts).toLocaleTimeString() : "-";
 }
