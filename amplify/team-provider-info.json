@@ -1,0 +1,15 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-electricityfaultdash-dev-da326-authRole",
+      "UnauthRoleArn": "arn:aws:iam::765899424714:role/amplify-electricityfaultdash-dev-da326-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::765899424714:role/amplify-electricityfaultdash-dev-da326-authRole",
+      "Region": "us-east-1",
+      "DeploymentBucketName": "amplify-electricityfaultdash-dev-da326-deployment",
+      "UnauthRoleName": "amplify-electricityfaultdash-dev-da326-unauthRole",
+      "StackName": "amplify-electricityfaultdash-dev-da326",
+      "StackId": "arn:aws:cloudformation:us-east-1:765899424714:stack/amplify-electricityfaultdash-dev-da326/a9acbf10-3caf-11f1-92cc-12643c466f13",
+      "AmplifyAppId": "dfrvqrt5chw65"
+    }
+  }
+}

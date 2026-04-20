@@ -9,11 +9,11 @@ class WSService {
     if (!this.shouldReconnect) return;
 
     this.ws = new WebSocket(
-      "wss://mpl334ex50.execute-api.us-east-1.amazonaws.com/production"
+      "wss://lcgt3lf5j4.execute-api.us-east-1.amazonaws.com/production/"
     );
 
     this.ws.onopen = () => {
-      console.log("✅ WebSocket connected");
+      console.log("WebSocket connected");
 
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
@@ -35,7 +35,7 @@ class WSService {
     };
 
     this.ws.onclose = () => {
-      console.log("⚠️ WebSocket closed");
+      console.log(" WebSocket closed");
 
       if (!this.shouldReconnect) return;
 
