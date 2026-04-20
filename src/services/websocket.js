@@ -4,8 +4,8 @@ class WSService {
     this.reconnectTimer = null;
     this.shouldReconnect = true;
     this.isConnected = false;
-    // Use environment variable or default
-    this.wsUrl = "wss://lcgt3lf5j4.execute-api.us-east-1.amazonaws.com/production";
+    // Use environment variable from .env or default fallback
+    this.wsUrl = import.meta.env.VITE_WS_URL || "wss://lcgt3lf5j4.execute-api.us-east-1.amazonaws.com/production";
   }
 
   connect(onMessage, onStatus) {
@@ -18,9 +18,7 @@ class WSService {
       this.ws.onopen = () => {
         console.log("✅ WebSocket connected");
         this.isConnected = true;
-        
         if (onStatus) onStatus("connected");
-        
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
@@ -46,12 +44,10 @@ class WSService {
       this.ws.onclose = () => {
         console.log("⚠️ WebSocket closed");
         this.isConnected = false;
-        
         if (onStatus) onStatus("disconnected");
 
         if (!this.shouldReconnect) return;
 
-        // Reconnect after 3 seconds
         this.reconnectTimer = setTimeout(() => {
           console.log("🔄 Attempting to reconnect...");
           this.connect(onMessage, onStatus);
@@ -95,21 +91,7 @@ class WSService {
   }
 }
 
-// Create singleton instance
 const wsService = new WSService();
-
-// Export for both CJS and ESM
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { wsService };
-}
 
 export { wsService };
 export default wsService;
-
-    if (this.ws) {
-      this.ws.close();
-    }
-  }
-}
-
-export const wsService = new WSService();
